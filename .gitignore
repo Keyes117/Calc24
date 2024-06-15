@@ -1,0 +1,16 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs/Calc24/FileContentIndex/1f0ff0a6-4b62-451d-a476-d09ddf887b60.vsidx
+/.vs/Calc24/FileContentIndex/4150dd76-87ea-4324-9ca1-e127c046bd9b.vsidx
+/.vs/Calc24/FileContentIndex/67887b9c-8e64-479d-bbd6-f85fac88b077.vsidx
+/.vs/Calc24/FileContentIndex/71fbef7b-2fac-4c77-9b3d-16c42f2d3b4f.vsidx
+/.vs/Calc24/FileContentIndex/cc0251ee-b4c5-4ee9-b729-ff5d233a7313.vsidx
+/.vs/Calc24/v17/Browse.VC.db
+/.vs/Calc24/v17/Solution.VC.db
+/.vs/cmake.db
+/.vs/Calc24/v17/Browse.VC.db-shm
+/.vs/Calc24/v17/Browse.VC.db-wal
+/.vs/Calc24/v17/Browse.VC.opendb
+/.vs/Calc24/v17/DocumentLayout.json

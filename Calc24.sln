@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34622.214
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Calc24Server", "Calc24Server\Calc24Server.vcxproj", "{324F312E-79D0-47F0-BF22-4DBEE0870099}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Calc24Client", "Calc24Client\Calc24Client.vcxproj", "{0EA45222-49CA-4BBC-B3E9-389DA328C82C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{22B15CCC-80B0-4F4F-9B2C-9596F3F32AE4}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{324F312E-79D0-47F0-BF22-4DBEE0870099}.Debug|x64.ActiveCfg = Debug|x64
+		{324F312E-79D0-47F0-BF22-4DBEE0870099}.Debug|x64.Build.0 = Debug|x64
+		{324F312E-79D0-47F0-BF22-4DBEE0870099}.Debug|x86.ActiveCfg = Debug|Win32
+		{324F312E-79D0-47F0-BF22-4DBEE0870099}.Debug|x86.Build.0 = Debug|Win32
+		{324F312E-79D0-47F0-BF22-4DBEE0870099}.Release|x64.ActiveCfg = Release|x64
+		{324F312E-79D0-47F0-BF22-4DBEE0870099}.Release|x64.Build.0 = Release|x64
+		{324F312E-79D0-47F0-BF22-4DBEE0870099}.Release|x86.ActiveCfg = Release|Win32
+		{324F312E-79D0-47F0-BF22-4DBEE0870099}.Release|x86.Build.0 = Release|Win32
+		{0EA45222-49CA-4BBC-B3E9-389DA328C82C}.Debug|x64.ActiveCfg = Debug|x64
+		{0EA45222-49CA-4BBC-B3E9-389DA328C82C}.Debug|x64.Build.0 = Debug|x64
+		{0EA45222-49CA-4BBC-B3E9-389DA328C82C}.Debug|x86.ActiveCfg = Debug|Win32
+		{0EA45222-49CA-4BBC-B3E9-389DA328C82C}.Debug|x86.Build.0 = Debug|Win32
+		{0EA45222-49CA-4BBC-B3E9-389DA328C82C}.Release|x64.ActiveCfg = Release|x64
+		{0EA45222-49CA-4BBC-B3E9-389DA328C82C}.Release|x64.Build.0 = Release|x64
+		{0EA45222-49CA-4BBC-B3E9-389DA328C82C}.Release|x86.ActiveCfg = Release|Win32
+		{0EA45222-49CA-4BBC-B3E9-389DA328C82C}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {75818731-2949-4412-BB5C-3EA24108C0BC}
+	EndGlobalSection
+EndGlobal
