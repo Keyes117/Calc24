@@ -2,6 +2,7 @@
 # This .gitignore file was automatically created by Microsoft(R) Visual Studio.
 ################################################################################
 
+/.vs
 /.vs/Calc24/FileContentIndex/17251c18-2320-4ce8-8cf8-b405a648eed4.vsidx
 /.vs/Calc24/FileContentIndex/5f8c1707-3c4e-4cc1-a3ed-1a3d0f57d11b.vsidx
 /.vs/Calc24/FileContentIndex/67887b9c-8e64-479d-bbd6-f85fac88b077.vsidx
