@@ -70,7 +70,7 @@ void TCPServer::start()
 			return;
 		}
 
-		auto spThread = std::make_shared<std::thread>(TCPServer::clientThreadFunc,this,clientfd);
+		auto spThread = std::make_shared<std::thread>(clientThreadFunc,this,clientfd);
 		
 		//m_clientfdToThread[clientfd] = spThread;  考虑这种方法 效率上不是最高的， 应该会生成一份thread 的拷贝
 		m_clientfdToThread[clientfd] = std::move(spThread);

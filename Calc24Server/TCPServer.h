@@ -24,7 +24,7 @@ public:
 	void start();
 
 	//客户端的线程函数
-	static void clientThreadFunc(int clientfd);
+	void clientThreadFunc(int clientfd);
 
 	//发送玩家欢迎消息
 	bool sendWelcomeMsg(int clientfd);
