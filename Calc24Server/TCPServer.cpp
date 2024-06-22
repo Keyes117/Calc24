@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <functional>
+#include <sstream>
 
 #define PLAYER_WELCOME_MSG "Welcome to Cal24 Game\n"
 
@@ -19,21 +20,21 @@ bool TCPServer::init(const std::string& ip, uint16_t port)
 
     srand(time(nullptr));
 
-    //1.´´½¨Ò»¸öÕìÌısocket
+    //1.åˆ›å»ºä¸€ä¸ªä¾¦å¬socket
     m_listenfd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (m_listenfd == -1)
     {
         std::cout << "create listen socket error." << std::endl;
         return false;
     }
-    //¶Ë¿ÚºÅ¸´ÓÃ
+    //ç«¯å£å·å¤ç”¨
     int optval = 1;
-    //TODO: ÅĞ¶Ïº¯ÊıÊÇ·ñµ÷ÓÃ³É¹¦
+    //TODO: åˆ¤æ–­å‡½æ•°æ˜¯å¦è°ƒç”¨æˆåŠŸ
     ::setsockopt(m_listenfd, SOL_SOCKET, SO_REUSEADDR, &optval, static_cast<socklen_t>(sizeof optval));
     ::setsockopt(m_listenfd, SOL_SOCKET, SO_REUSEPORT, &optval, static_cast<socklen_t>(sizeof optval));
 
 
-    //2.³õÊ¼»¯·şÎñÆ÷µØÖ·
+    //2.åˆå§‹åŒ–æœåŠ¡å™¨åœ°å€
     struct sockaddr_in bindaddr;
     bindaddr.sin_family = AF_INET;
     bindaddr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -45,7 +46,7 @@ bool TCPServer::init(const std::string& ip, uint16_t port)
     }
 
 
-    //3.Æô¶¯ÕìÌı
+    //3.å¯åŠ¨ä¾¦å¬
     if (::listen(m_listenfd, SOMAXCONN) == -1)
     {
         std::cout << "listen error." << std::endl;
@@ -61,7 +62,7 @@ void TCPServer::start()
     {
         struct sockaddr_in clientaddr;
         socklen_t clientaddrlen = sizeof(clientaddr);
-        //4. ½ÓÊÜ¿Í»§¶ËÁ¬½Ó
+        //4. æ¥å—å®¢æˆ·ç«¯è¿æ¥
         int clientfd = ::accept(m_listenfd, (struct sockaddr*)&clientaddr, &clientaddrlen);
         if (clientfd == -1)
         {
@@ -70,33 +71,47 @@ void TCPServer::start()
         }
 
 
-            //ÕâÀïÏß³Ìº¯Êı°ó¶¨²ÎÊıµÄÎÊÌâ£¬
-            //Èç¹ûÊ¹ÓÃ¾²Ì¬º¯Êı£¬Ôò²»Ó¦¸Ã´«ÈëthisÖ¸Õë£¬¶øÓ¦¸Ã°ÉÏß³Ìº¯ÊıÄÚµ÷ÓÃµÄº¯ÊıÒ²±ä³É¾²Ì¬º¯Êı
-            //Èç¹ûÊ¹ÓÃ³ÉÔ±º¯Êı£¬ÕâÓ¦¸ÃÓÃ std::bind »òÕß º¯ÊıÖ¸Õë½øĞĞ²¶»ñ thisÖ¸Õë¡£
+        //è¿™é‡Œçº¿ç¨‹å‡½æ•°ç»‘å®šå‚æ•°çš„é—®é¢˜ï¼Œ
+        //å¦‚æœä½¿ç”¨é™æ€å‡½æ•°ï¼Œåˆ™ä¸åº”è¯¥ä¼ å…¥thisæŒ‡é’ˆï¼Œè€Œåº”è¯¥å§çº¿ç¨‹å‡½æ•°å†…è°ƒç”¨çš„å‡½æ•°ä¹Ÿå˜æˆé™æ€å‡½æ•°
+        //å¦‚æœä½¿ç”¨æˆå‘˜å‡½æ•°ï¼Œè¿™åº”è¯¥ç”¨ std::bind æˆ–è€… å‡½æ•°æŒ‡é’ˆè¿›è¡Œæ•è· thisæŒ‡é’ˆã€‚
         auto spThread = std::make_shared<std::thread>(&TCPServer::clientThreadFunc, this, clientfd);
-      
 
-        //m_clientfdToThread[clientfd] = spThread;  ¿¼ÂÇÕâÖÖ·½·¨ Ğ§ÂÊÉÏ²»ÊÇ×î¸ßµÄ£¬ ÒòÎª»áÉú³ÉÒ»·İthread µÄ¿½±´
+
+        //m_clientfdToThread[clientfd] = spThread;  è€ƒè™‘è¿™ç§æ–¹æ³• æ•ˆç‡ä¸Šä¸æ˜¯æœ€é«˜çš„ï¼Œ å› ä¸ºä¼šç”Ÿæˆä¸€ä»½thread çš„æ‹·è´
         m_clientfdToThread[clientfd] = std::move(spThread);
 
+    }
 }
-}
 
-//¿Í»§¶ËÁ¬ÉÏÊ±µÄÏß³Ìº¯Êı
-void TCPServer::clientThreadFunc(int clientfd) {
-
-
+//å®¢æˆ·ç«¯è¿ä¸Šæ—¶çš„çº¿ç¨‹å‡½æ•°
+void TCPServer::clientThreadFunc(int clientfd)
+{
     std::cout << "new client connected: " << std::endl;
 
-    //ÏÈ³õÊ¼»¯clientfd¶ÔÓ¦µÄbuffer
+    //å…ˆåˆå§‹åŒ–clientfdå¯¹åº”çš„buffer
     m_clientfdToRecvBuf[clientfd] = "";
-    //·¢ËÍ»¶Ó­ÏûÏ¢
+
+    //åˆå§‹åŒ–clientfdå¯¹åº”çš„ mutex;
+    //m_clientfdToMutex[clientfd] = std::mutex();  mutexä¸æ”¯æŒæ‹·è´æ„é€ 
+    //m_clientfdToMutex.emplace(clientfd, std::mutex()); //åŸä½æ„é€ 
+    // æ”¹æˆæŒ‡é’ˆå
+    m_clientfdToMutex[clientfd] = std::move(std::make_shared<std::mutex>()); //C++11 çš„STLå®¹å™¨æˆ–è‡ªåŠ¨moveæŒ‡é’ˆ,å¯ä»¥ä¸æ˜¾ç¤ºçš„move
+
+
+    //å‘é€æ¬¢è¿æ¶ˆæ¯
     if (!sendWelcomeMsg(clientfd))
     {
         ::close(clientfd);
         return;
     }
-    //³õÊ¼»¯·¢ËÍ¿¨ÅÆ 
+
+    //ç­‰å¾…æ»¡nä¸ªäººå°±å‘ç‰Œ
+    while (true)
+    {
+
+    }
+
+    //åˆå§‹åŒ–å‘é€å¡ç‰Œ 
     if (initCards(clientfd))
     {
         std::cout << "initCards successfully, clientfd: " << clientfd << std::endl;
@@ -110,7 +125,7 @@ void TCPServer::clientThreadFunc(int clientfd) {
 
     while (true) {
 
-        //½ÓÊÜµ½¿Í»§¶ËÏûÏ¢ clientMsg
+        //æ¥å—åˆ°å®¢æˆ·ç«¯æ¶ˆæ¯ clientMsg
         char clientMsg[32] = { 0 };
         int clientMsgLength = ::recv(clientfd, clientMsg, sizeof(clientMsg) / sizeof(clientMsg[0]), 0);
 
@@ -166,15 +181,15 @@ void TCPServer::handleClientMsg(int clientfd)
 
     while (true)
     {
-        //Èç¹ûÊÇÕû°ü,ÇÒ»¹ÓĞÊı¾İ
+        //å¦‚æœæ˜¯æ•´åŒ…,ä¸”è¿˜æœ‰æ•°æ®
         if (recvBuf[index] == '\n')
         {
             currentMsg = recvBuf.substr(currentMsgPos, index - currentMsgPos);
 
             std::cout << "Client[" << clientfd << "] Says :" << currentMsg << std::endl;
 
-            //×ª·¢µ±Ç°Íæ¼ÒÏûÏ¢ ¸øÆäËûÍæ¼Ò;
-            sendMsgToOtherClients(currentMsg);
+            //è½¬å‘å½“å‰ç©å®¶æ¶ˆæ¯ ç»™å…¶ä»–ç©å®¶;
+            sendMsgToOtherClients(currentMsg, clientfd);
 
             currentMsgPos = index + 1;
         }
@@ -195,15 +210,39 @@ void TCPServer::handleClientMsg(int clientfd)
     return;
 }
 
-void TCPServer::sendMsgToOtherClients(const std::string& msg)
+void TCPServer::sendMsgToOtherClients(const std::string& msg, int selfishfd)
 {
+    //çº¿ç¨‹å®‰å…¨é—®é¢˜ï¼Ÿ 
+    //1ã€å¤šä¸ªç”¨æˆ·ä¼ é€’æ¶ˆæ¯ï¼Œå¯èƒ½æŸä¸ªclientfdè¢«å¤šä¸ªçº¿ç¨‹åŒæ—¶è°ƒç”¨
+    //2ã€m_clientfdToThread å¯èƒ½å› ä¸ºå®¢æˆ·ç«¯ä¸¢å¤±è¿æ¥æˆ–è€…æ–°å®¢æˆ·ç«¯è¿æ¥ï¼Œå¯¼è‡´è¢«æ”¹å†™
+    int otherClientfd;
+
+    std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToThread);
     for (const auto& client : m_clientfdToThread)
     {
-        //TODO: ¼ÙÉèÏûÏ¢Ì«³¤,Ò»´ÎĞÔ·¢²»³öÈ¥, ĞèÒª´¦Àí 
-        int sendLength = ::send(client.first, msg.c_str(), msg.length(), 0);
-        if (sendLength != msg.length())
-        {
-            std::cout << "fails to sendMsgToOtherClients, clientfd:" << client.first << std::endl;
-        }
+        otherClientfd = client.first;
+        if (otherClientfd == selfishfd)
+            continue;
+
+        std::ostringstream oss;
+        oss << "Client[" << selfishfd << "] Says :" << msg;
+
+        std::string msgWithOnerInfo = oss.str();
+
+        if (!sendMsgToClient(otherClientfd, msgWithOnerInfo))
+            std::cout << "failed to sendMsgToOtherClients, clientfd:" << client.first << "\n";
+
+
     }
+}
+
+bool TCPServer::sendMsgToClient(int otherClientfd, const std::string& msg)
+{
+    std::lock_guard<std::mutex> scopedLock(*m_clientfdToMutex[otherClientfd]);
+    //TODO: å‡è®¾æ¶ˆæ¯å¤ªé•¿,ä¸€æ¬¡æ€§å‘ä¸å‡ºå», éœ€è¦å¤„ç† 
+    int sendLength = ::send(otherClientfd, msg.c_str(), msg.length(), 0);
+    if (sendLength != static_cast<int>(msg.length()))
+        return false;
+
+    return true;
 }

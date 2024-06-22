@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -14,45 +15,48 @@ public:
     TCPServer(const TCPServer& rhs) = delete;
     TCPServer& operator=(const TCPServer& rhs) = delete;
 
-    //ÒÆ¶¯¿½±´¹¹Ôìº¯Êı
+    //ç§»åŠ¨æ‹·è´æ„é€ å‡½æ•°
     TCPServer(TCPServer&& rhs) noexcept = delete;
-    //ÒÆ¶¯operator = 
+    //ç§»åŠ¨operator = 
     TCPServer& operator=(TCPServer&& rhs) noexcept = delete;
 
     bool init(const std::string& ip, uint16_t port);
 
     void start();
 
-    
-        //¿Í»§¶ËµÄÏß³Ìº¯Êı
-        void clientThreadFunc(int clientfd);
 
-        //¿Í»§¶ËµÄÏß³Ìº¯Êı
-        static void clientThreadFunc(int clientfd);
+    //å®¢æˆ·ç«¯çš„çº¿ç¨‹å‡½æ•°
+    void clientThreadFunc(int clientfd);
 
 
+    /*===============ä¸šåŠ¡æ–¹æ³•================*/
 
-        /*===============ÒµÎñ·½·¨================*/
+    //å‘é€ç©å®¶æ¬¢è¿æ¶ˆæ¯
+    bool sendWelcomeMsg(int clientfd);
 
-        //·¢ËÍÍæ¼Ò»¶Ó­ÏûÏ¢
-        bool sendWelcomeMsg(int clientfd);
-
-    //·¢ÅÆ
+    //å‘ç‰Œ
     bool initCards(int clientfd);
 
-    //´¦Àí¿Í»§¶ËĞÅÏ¢
+    //å¤„ç†å®¢æˆ·ç«¯ä¿¡æ¯
     void handleClientMsg(int clientfd);
 
-    //×ª·¢ÏûÏ¢¸øÆäËû¿Í»§¶Ë 
-    void sendMsgToOtherClients(const std::string & msg);
+    //è½¬å‘æ¶ˆæ¯ç»™å…¶ä»–å®¢æˆ·ç«¯ 
+    void sendMsgToOtherClients(const std::string& msg, int selfishfd);
 
+    //å‘å®¢æˆ·ç«¯å‘é€æ¶ˆæ¯ 
+    bool sendMsgToClient(int otherClientfd, const std::string& msg);
 
 
 private:
     int															m_listenfd{ -1 };
 
-    //TODO: ¿¼ÂÇÊÇ·ñ¿ÉÒÔ½«std::shared_ptr ¸Ä³É unique_ptr
+    //TODO: è€ƒè™‘æ˜¯å¦å¯ä»¥å°†std::shared_ptr æ”¹æˆ unique_ptr
     std::unordered_map<int, std::shared_ptr<std::thread>>		m_clientfdToThread;
 
+    //ä¿æŠ¤clientToThread;
+    std::mutex                                                  m_mutexForClientfdToThread;
+
     std::unordered_map<int, std::string>						m_clientfdToRecvBuf;
+
+    std::unordered_map<int, std::shared_ptr<std::mutex>>        m_clientfdToMutex;
 };
