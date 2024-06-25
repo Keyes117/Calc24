@@ -1,10 +1,25 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
+
+
+#define NO_PLAYER_ON_SEAT -1
+typedef kClientfd int
+
+struct Desk
+{
+    int id;
+    int clientfd1{ NO_PLAYER_ON_SEAT };
+    int clientfd2{ NO_PLAYER_ON_SEAT };
+    int clientfd3{ NO_PLAYER_ON_SEAT };
+};
+
 
 class TCPServer
 {
@@ -31,8 +46,13 @@ public:
 
     /*===============业务方法================*/
 
+
+    void newPlayerJoined(int clientfd);
+
     //发送玩家欢迎消息
     bool sendWelcomeMsg(int clientfd);
+
+    bool sendWaitMsg(int clientfd);
 
     //发牌
     bool initCards(int clientfd);
@@ -59,4 +79,12 @@ private:
     std::unordered_map<int, std::string>						m_clientfdToRecvBuf;
 
     std::unordered_map<int, std::shared_ptr<std::mutex>>        m_clientfdToMutex;
+
+    std::vector<Desk>                                           m_deskInfo;
+
+
+    //key=>clientfd ,value=>clientfd对应的桌子是否可以发牌了
+    std::unordered_map<int, std::atomic<bool>>					m_clientfdToDeskReady;
+
+    std::mutex                                                  m_mutexForClientfdToDeskReady;
 };

@@ -9,11 +9,13 @@
 #include <unistd.h>
 
 
+
 #include <iostream>
 #include <functional>
 #include <sstream>
 
 #define PLAYER_WELCOME_MSG "Welcome to Cal24 Game\n"
+#define PLAYER_WAITING_MSG "The desk is not full with 3 player currently, please wait for seconds\n"
 
 bool TCPServer::init(const std::string& ip, uint16_t port)
 {
@@ -63,22 +65,14 @@ void TCPServer::start()
         struct sockaddr_in clientaddr;
         socklen_t clientaddrlen = sizeof(clientaddr);
         //4. 接受客户端连接
-        int clientfd = ::accept(m_listenfd, (struct sockaddr*)&clientaddr, &clientaddrlen);
+        int clientfd = ::accept4(m_listenfd, (struct sockaddr*)&clientaddr, &clientaddrlen, SOCK_NONBLOCK);
         if (clientfd == -1)
         {
             std::cout << "accept error" << std::endl;
             return;
         }
 
-
-        //这里线程函数绑定参数的问题，
-        //如果使用静态函数，则不应该传入this指针，而应该吧线程函数内调用的函数也变成静态函数
-        //如果使用成员函数，这应该用 std::bind 或者 函数指针进行捕获 this指针。
-        auto spThread = std::make_shared<std::thread>(&TCPServer::clientThreadFunc, this, clientfd);
-
-
-        //m_clientfdToThread[clientfd] = spThread;  考虑这种方法 效率上不是最高的， 因为会生成一份thread 的拷贝
-        m_clientfdToThread[clientfd] = std::move(spThread);
+        newPlayerJoined(clientfd);
 
     }
 }
@@ -96,7 +90,8 @@ void TCPServer::clientThreadFunc(int clientfd)
     //m_clientfdToMutex.emplace(clientfd, std::mutex()); //原位构造
     // 改成指针后
     m_clientfdToMutex[clientfd] = std::move(std::make_shared<std::mutex>()); //C++11 的STL容器或自动move指针,可以不显示的move
-
+    //这里线程可能后运行到这里 导致客户线程 无法发牌
+    //m_clientfdToDeskReady[clientfd] = false;
 
     //发送欢迎消息
     if (!sendWelcomeMsg(clientfd))
@@ -105,23 +100,41 @@ void TCPServer::clientThreadFunc(int clientfd)
         return;
     }
 
+    bool initCardsCompleted = false;
+    bool alreadySentwaitMsg = false;
     //等待满n个人就发牌
     while (true)
     {
 
+        std::atomic<bool>* deskReady;
+        {
+            std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToDeskReady);
+            deskReady = &m_clientfdToDeskReady[clientfd];
+        }
+
+        if (*deskReady && !initCardsCompleted)
+        {
+            //初始化发送卡牌 
+            if (initCards(clientfd))
+            {
+                initCardsCompleted = true;
+                std::cout << "initCards successfully, clientfd: " << clientfd << std::endl;
+                break;
+            }
+            else
+            {
+                std::cout << "fail to initCards , clientfd: " << clientfd << std::endl;
+                ::close(clientfd);
+                return;
+            }
+        }
+        else if (!alreadySentwaitMsg)
+        {
+            sendWaitMsg(clientfd);
+            alreadySentwaitMsg = true;
+        }
     }
 
-    //初始化发送卡牌 
-    if (initCards(clientfd))
-    {
-        std::cout << "initCards successfully, clientfd: " << clientfd << std::endl;
-    }
-    else
-    {
-        std::cout << "fail to initCards , clientfd: " << clientfd << std::endl;
-        ::close(clientfd);
-        return;
-    }
 
     while (true) {
 
@@ -129,10 +142,27 @@ void TCPServer::clientThreadFunc(int clientfd)
         char clientMsg[32] = { 0 };
         int clientMsgLength = ::recv(clientfd, clientMsg, sizeof(clientMsg) / sizeof(clientMsg[0]), 0);
 
-        if (clientMsgLength <= 0) {
+        if (clientMsgLength == 0) {
             ::close(clientfd);
             return;
         }
+
+        if (clientMsgLength < 0)
+        {
+            if (errno != EWOULDBLOCK && errno != EAGAIN)
+            {
+                //链接真的出错了
+                ::close(clientfd);
+                return;
+            }
+            else
+            {
+                //sleep不合理，暂时这么用
+                sleep(1);
+                continue;
+            }
+        }
+
         std::string& recvBuf = m_clientfdToRecvBuf[clientfd];
         recvBuf.append(clientMsg, clientMsgLength);
 
@@ -140,12 +170,84 @@ void TCPServer::clientThreadFunc(int clientfd)
     }
 }
 
+void TCPServer::newPlayerJoined(int clientfd)
+{
+    Desk* pCurrentDesk = nullptr;
+
+    {
+        std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToDeskReady);
+        m_clientfdToDeskReady[clientfd] = false;
+    }
+
+
+    auto iter = m_deskInfo.rbegin();
+    if (iter == m_deskInfo.rend())
+    {
+        Desk newDesk;
+        // 桌子的Id从1开始
+        newDesk.id = 1;
+        newDesk.clientfd1 = clientfd;
+        m_deskInfo.push_back(newDesk);
+    }
+    else
+    {
+        if (iter->clientfd1 == NO_PLAYER_ON_SEAT)
+        {
+            iter->clientfd1 = clientfd;
+        }
+        else if (iter->clientfd2 == NO_PLAYER_ON_SEAT)
+        {
+            iter->clientfd2 = clientfd;
+        }
+        else if (iter->clientfd3 == NO_PLAYER_ON_SEAT)
+        {
+            iter->clientfd3 = clientfd;
+
+            //当前来了新玩家， 桌子坐满了
+            pCurrentDesk = &(*iter);
+        }
+        else
+        {
+            Desk newDesk;
+            newDesk.id = m_deskInfo.size() + 1;
+            newDesk.clientfd1 = clientfd;
+            m_deskInfo.push_back(newDesk);
+        }
+
+    }
+
+
+    if (pCurrentDesk != nullptr)
+    {
+        std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToDeskReady);
+        m_clientfdToDeskReady[pCurrentDesk->clientfd1] = true;
+        m_clientfdToDeskReady[pCurrentDesk->clientfd2] = true;
+        m_clientfdToDeskReady[pCurrentDesk->clientfd3] = true;
+    }
+
+    //这里线程函数绑定参数的问题，
+    //如果使用静态函数，则不应该传入this指针，而应该吧线程函数内调用的函数也变成静态函数
+    //如果使用成员函数，这应该用 std::bind 或者 函数指针进行捕获 this指针。
+    auto spThread = std::make_shared<std::thread>(&TCPServer::clientThreadFunc, this, clientfd);
+
+    //m_clientfdToThread[clientfd] = spThread;  考虑这种方法 效率上不是最高的， 因为会生成一份thread 的拷贝
+    m_clientfdToThread[clientfd] = std::move(spThread);
+
+
+}
 
 bool TCPServer::sendWelcomeMsg(int clientfd)
 {
-    int sendLenth = ::send(clientfd, PLAYER_WELCOME_MSG, strlen(PLAYER_WELCOME_MSG), 0);
-    return sendLenth == static_cast<int>(strlen(PLAYER_WELCOME_MSG));
+    int sendLength = ::send(clientfd, PLAYER_WELCOME_MSG, strlen(PLAYER_WELCOME_MSG), 0);
+    return sendLength == static_cast<int>(strlen(PLAYER_WELCOME_MSG));
 
+}
+
+bool TCPServer::sendWaitMsg(int clientfd)
+{
+
+    int sendLength = ::send(clientfd, PLAYER_WAITING_MSG, strlen(PLAYER_WAITING_MSG), 0);
+    return sendLength == static_cast<int>(strlen(PLAYER_WAITING_MSG));
 }
 
 bool TCPServer::initCards(int clientfd)
@@ -187,7 +289,7 @@ void TCPServer::handleClientMsg(int clientfd)
             currentMsg = recvBuf.substr(currentMsgPos, index - currentMsgPos);
 
             std::cout << "Client[" << clientfd << "] Says :" << currentMsg << std::endl;
-
+            currentMsg += "\n";
             //转发当前玩家消息 给其他玩家;
             sendMsgToOtherClients(currentMsg, clientfd);
 
@@ -223,6 +325,7 @@ void TCPServer::sendMsgToOtherClients(const std::string& msg, int selfishfd)
         otherClientfd = client.first;
         if (otherClientfd == selfishfd)
             continue;
+
 
         std::ostringstream oss;
         oss << "Client[" << selfishfd << "] Says :" << msg;
