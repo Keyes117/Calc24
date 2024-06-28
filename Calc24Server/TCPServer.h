@@ -9,17 +9,9 @@
 #include <vector>
 
 
-#define NO_PLAYER_ON_SEAT -1
-typedef kClientfd int
 
-struct Desk
-{
-    int id;
-    int clientfd1{ NO_PLAYER_ON_SEAT };
-    int clientfd2{ NO_PLAYER_ON_SEAT };
-    int clientfd3{ NO_PLAYER_ON_SEAT };
-};
-
+typedef int kClientfd;
+class Player;
 
 class TCPServer
 {
@@ -39,23 +31,25 @@ public:
 
     void start();
 
-
     //客户端的线程函数
-    void clientThreadFunc(int clientfd);
-
+    void clientThreadFunc(int clientfd, std::shared_ptr<Desk> spCurrentDesk);
 
     /*===============业务方法================*/
 
-
+    //新玩家加入逻辑
     void newPlayerJoined(int clientfd);
 
     //发送玩家欢迎消息
     bool sendWelcomeMsg(int clientfd);
 
+    //发送等待消息
     bool sendWaitMsg(int clientfd);
 
+    //初始化卡牌
+    void initCards(std::shared_ptr<Desk> spDesk);
+
     //发牌
-    bool initCards(int clientfd);
+    bool sendCards(int clientfd);
 
     //处理客户端信息
     void handleClientMsg(int clientfd);
@@ -68,23 +62,28 @@ public:
 
 
 private:
-    int															m_listenfd{ -1 };
+    int															     m_listenfd{ -1 };
 
-    //TODO: 考虑是否可以将std::shared_ptr 改成 unique_ptr
-    std::unordered_map<int, std::shared_ptr<std::thread>>		m_clientfdToThread;
+    std::unordered_map<kClientfd, std::shared_ptr<Player>>           m_clientfdToPlayer;
+
+
+    //TODO: 考虑将std::shared_ptr 改成 unique_ptr
+    std::unordered_map<kClientfd, std::shared_ptr<std::thread>>		 m_clientfdToThread;
 
     //保护clientToThread;
-    std::mutex                                                  m_mutexForClientfdToThread;
+    std::mutex                                                       m_mutexForClientfdToThread;
 
-    std::unordered_map<int, std::string>						m_clientfdToRecvBuf;
+    std::unordered_map<kClientfd, std::string>						 m_clientfdToRecvBuf;
 
-    std::unordered_map<int, std::shared_ptr<std::mutex>>        m_clientfdToMutex;
+    std::unordered_map<kClientfd, std::shared_ptr<std::mutex>>       m_clientfdToMutex;
 
-    std::vector<Desk>                                           m_deskInfo;
+    std::vector<std::shared_ptr<Desk>>                               m_deskInfo;
 
 
     //key=>clientfd ,value=>clientfd对应的桌子是否可以发牌了
-    std::unordered_map<int, std::atomic<bool>>					m_clientfdToDeskReady;
+    std::unordered_map<kClientfd, std::atomic<bool>>				 m_clientfdToDeskReady;
 
-    std::mutex                                                  m_mutexForClientfdToDeskReady;
+    std::mutex                                                       m_mutexForClientfdToDeskReady;
+
+
 };

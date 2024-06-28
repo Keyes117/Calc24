@@ -1,6 +1,8 @@
-#include "TCPServer.h"
+#pragma once
+#include "TCPServer.h"   //当前CPP文件的头文件
 
-#include <arpa/inet.h>
+
+#include <arpa/inet.h>     // 系统库文件
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -8,11 +10,12 @@
 #include <time.h>
 #include <unistd.h>
 
-
-
-#include <iostream>
+#include <iostream>         //C++库文件
 #include <functional>
 #include <sstream>
+
+//其他库文件
+#include "Player.h"         //本项目中其他头文件
 
 #define PLAYER_WELCOME_MSG "Welcome to Cal24 Game\n"
 #define PLAYER_WAITING_MSG "The desk is not full with 3 player currently, please wait for seconds\n"
@@ -78,7 +81,7 @@ void TCPServer::start()
 }
 
 //客户端连上时的线程函数
-void TCPServer::clientThreadFunc(int clientfd)
+void TCPServer::clientThreadFunc(int clientfd, std::shared_ptr<Desk> spCurrentDesk)
 {
     std::cout << "new client connected: " << std::endl;
 
@@ -115,7 +118,7 @@ void TCPServer::clientThreadFunc(int clientfd)
         if (*deskReady && !initCardsCompleted)
         {
             //初始化发送卡牌 
-            if (initCards(clientfd))
+            if (sendCards(clientfd))
             {
                 initCardsCompleted = true;
                 std::cout << "initCards successfully, clientfd: " << clientfd << std::endl;
@@ -137,7 +140,6 @@ void TCPServer::clientThreadFunc(int clientfd)
 
 
     while (true) {
-
         //接受到客户端消息 clientMsg
         char clientMsg[32] = { 0 };
         int clientMsgLength = ::recv(clientfd, clientMsg, sizeof(clientMsg) / sizeof(clientMsg[0]), 0);
@@ -172,63 +174,80 @@ void TCPServer::clientThreadFunc(int clientfd)
 
 void TCPServer::newPlayerJoined(int clientfd)
 {
-    Desk* pCurrentDesk = nullptr;
+    auto spCurrentPlayer = std::make_shared<Player>(clientfd);
+    //m_clientfdToPlayer[clientfd] = std::move(spPlayer);
 
-    {
-        std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToDeskReady);
-        m_clientfdToDeskReady[clientfd] = false;
-    }
+    std::shared_ptr<Desk> spCurrentFullDesk;
 
-
+    //如果是第一个桌子
     auto iter = m_deskInfo.rbegin();
     if (iter == m_deskInfo.rend())
     {
-        Desk newDesk;
+        //第一个玩家加入
+        auto spNewDesk = std::make_shared<Desk>();
         // 桌子的Id从1开始
-        newDesk.id = 1;
-        newDesk.clientfd1 = clientfd;
-        m_deskInfo.push_back(newDesk);
+        // TODO: 把1改成常量不用
+        spNewDesk->id = 1;
+        spNewDesk->spPlayer1 = spCurrentPlayer;
+
+        spCurrentPlayer->setDesk(spNewDesk);
+        //注意不能 先做move操作
+        m_deskInfo.push_back(std::move(spNewDesk));
     }
+    //如果是第一个桌子
     else
     {
-        if (iter->clientfd1 == NO_PLAYER_ON_SEAT)
+        //非第一个玩家加入
+        if ((*iter)->spPlayer1.expired())  //weak_ptr 管理的对象 已经没有了 通过expired;
         {
-            iter->clientfd1 = clientfd;
+            (*iter)->spPlayer1 = spCurrentPlayer;
         }
-        else if (iter->clientfd2 == NO_PLAYER_ON_SEAT)
+        else if ((*iter)->spPlayer2.expired())
         {
-            iter->clientfd2 = clientfd;
+            (*iter)->spPlayer2 = spCurrentPlayer;
         }
-        else if (iter->clientfd3 == NO_PLAYER_ON_SEAT)
+        else if ((*iter)->spPlayer3.expired())
         {
-            iter->clientfd3 = clientfd;
+            (*iter)->spPlayer3 = spCurrentPlayer;
 
             //当前来了新玩家， 桌子坐满了
-            pCurrentDesk = &(*iter);
+            spCurrentFullDesk = *iter;
         }
         else
         {
-            Desk newDesk;
-            newDesk.id = m_deskInfo.size() + 1;
-            newDesk.clientfd1 = clientfd;
-            m_deskInfo.push_back(newDesk);
+            auto spNewDesk = std::make_shared<Desk>();
+            // 桌子的Id从1开始
+            // TODO: 把1改成常量不用
+            spNewDesk->id = m_deskInfo.size() + 1;
+            spNewDesk->spPlayer1 = spCurrentPlayer;
+
+            //注意不能 先做move操作
+            m_deskInfo.push_back(std::move(spNewDesk));
         }
 
     }
 
 
-    if (pCurrentDesk != nullptr)
+    if (spCurrentFullDesk != nullptr)
     {
         std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToDeskReady);
-        m_clientfdToDeskReady[pCurrentDesk->clientfd1] = true;
-        m_clientfdToDeskReady[pCurrentDesk->clientfd2] = true;
-        m_clientfdToDeskReady[pCurrentDesk->clientfd3] = true;
+        initCards(spCurrentFullDesk);
+        std::shared_ptr<Player> p1 = spCurrentFullDesk->spPlayer1.lock();
+        std::shared_ptr<Player> p2 = spCurrentFullDesk->spPlayer2.lock();
+        std::shared_ptr<Player> p3 = spCurrentFullDesk->spPlayer3.lock();
+        if (p1 != nullptr && p2 != nullptr && p3 != nullptr)
+        {
+            p1->serReady(true);
+            p2->serReady(true);
+            p3->serReady(true);
+        }
+
     }
 
     //这里线程函数绑定参数的问题，
     //如果使用静态函数，则不应该传入this指针，而应该吧线程函数内调用的函数也变成静态函数
     //如果使用成员函数，这应该用 std::bind 或者 函数指针进行捕获 this指针。
-    auto spThread = std::make_shared<std::thread>(&TCPServer::clientThreadFunc, this, clientfd);
+    auto spThread = std::make_shared<std::thread>(&TCPServer::clientThreadFunc, this, clientfd, spCurrentFullDesk);
 
     //m_clientfdToThread[clientfd] = spThread;  考虑这种方法 效率上不是最高的， 因为会生成一份thread 的拷贝
     m_clientfdToThread[clientfd] = std::move(spThread);
@@ -250,7 +269,7 @@ bool TCPServer::sendWaitMsg(int clientfd)
     return sendLength == static_cast<int>(strlen(PLAYER_WAITING_MSG));
 }
 
-bool TCPServer::initCards(int clientfd)
+void TCPServer::initCards(std::shared_ptr<Desk> spDesk)
 {
     static constexpr char allCards[] = { 'A','2','3','4','5','6','7','8','9','X','J','Q','K','w','W' };
     static constexpr int allCardsCount = sizeof(allCards) / sizeof(allCards[0]);
@@ -260,16 +279,21 @@ bool TCPServer::initCards(int clientfd)
     int index3 = rand() % allCardsCount;
     int index4 = rand() % allCardsCount;
 
-    char sendCards[24];
-    sprintf(sendCards, "Your cards is: %c %c %c %c\n",
+    char newCards[24];
+    sprintf(newCards, "Your cards is: %c %c %c %c\n",
         allCards[index1],
         allCards[index2],
         allCards[index3],
         allCards[index4]);
 
-    int sendLenth = ::send(clientfd, sendCards, strlen(sendCards), 0);
-    return sendLenth == static_cast<int>(strlen(sendCards));
+    spDesk->m_toSendCards.append(newCards, strlen(newCards));
 
+}
+
+bool TCPServer::sendCards(int clientfd)
+{
+    int sendLength = ::send(clientfd, m_toSendCards.c_str(), m_toSendCards.length(), 0);
+    return sendLength == static_cast<int>(m_toSendCards.length());
 }
 // 012 3 456 7  89 	
 // ABC\n EDF\n  GH
@@ -326,7 +350,6 @@ void TCPServer::sendMsgToOtherClients(const std::string& msg, int selfishfd)
         if (otherClientfd == selfishfd)
             continue;
 
-
         std::ostringstream oss;
         oss << "Client[" << selfishfd << "] Says :" << msg;
 
@@ -334,14 +357,13 @@ void TCPServer::sendMsgToOtherClients(const std::string& msg, int selfishfd)
 
         if (!sendMsgToClient(otherClientfd, msgWithOnerInfo))
             std::cout << "failed to sendMsgToOtherClients, clientfd:" << client.first << "\n";
-
-
     }
 }
 
 bool TCPServer::sendMsgToClient(int otherClientfd, const std::string& msg)
 {
     std::lock_guard<std::mutex> scopedLock(*m_clientfdToMutex[otherClientfd]);
+
     //TODO: 假设消息太长,一次性发不出去, 需要处理 
     int sendLength = ::send(otherClientfd, msg.c_str(), msg.length(), 0);
     if (sendLength != static_cast<int>(msg.length()))
