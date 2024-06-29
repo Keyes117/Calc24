@@ -23,6 +23,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -g -Wall -O0 -Wno-unused-vari
 
 set(srcs
 TCPServer.cpp
+Player.cpp
 main.cpp
 )
 

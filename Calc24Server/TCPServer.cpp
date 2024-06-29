@@ -1,4 +1,3 @@
-#pragma once
 #include "TCPServer.h"   //当前CPP文件的头文件
 
 
@@ -17,8 +16,8 @@
 //其他库文件
 #include "Player.h"         //本项目中其他头文件
 
-#define PLAYER_WELCOME_MSG "Welcome to Cal24 Game\n"
-#define PLAYER_WAITING_MSG "The desk is not full with 3 player currently, please wait for seconds\n"
+
+
 
 bool TCPServer::init(const std::string& ip, uint16_t port)
 {
@@ -81,101 +80,71 @@ void TCPServer::start()
 }
 
 //客户端连上时的线程函数
-void TCPServer::clientThreadFunc(int clientfd, std::shared_ptr<Desk> spCurrentDesk)
+void TCPServer::clientThreadFunc(std::shared_ptr<Player> spCurrentPlayer, std::shared_ptr<Desk> spCurrentDesk)
 {
+    int clientfd = spCurrentPlayer->getClientfd();
+
     std::cout << "new client connected: " << std::endl;
-
-    //先初始化clientfd对应的buffer
-    m_clientfdToRecvBuf[clientfd] = "";
-
     //初始化clientfd对应的 mutex;
     //m_clientfdToMutex[clientfd] = std::mutex();  mutex不支持拷贝构造
     //m_clientfdToMutex.emplace(clientfd, std::mutex()); //原位构造
     // 改成指针后
-    m_clientfdToMutex[clientfd] = std::move(std::make_shared<std::mutex>()); //C++11 的STL容器或自动move指针,可以不显示的move
+    //m_clientfdToMutex[clientfd] = std::move(std::make_shared<std::mutex>()); //C++11 的STL容器或自动move指针,可以不显示的move
     //这里线程可能后运行到这里 导致客户线程 无法发牌
     //m_clientfdToDeskReady[clientfd] = false;
 
     //发送欢迎消息
-    if (!sendWelcomeMsg(clientfd))
+    if (!spCurrentPlayer->sendWelcomeMsg())
     {
-        ::close(clientfd);
         return;
     }
 
-    bool initCardsCompleted = false;
-    bool alreadySentwaitMsg = false;
     //等待满n个人就发牌
     while (true)
     {
-
-        std::atomic<bool>* deskReady;
-        {
-            std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToDeskReady);
-            deskReady = &m_clientfdToDeskReady[clientfd];
-        }
-
-        if (*deskReady && !initCardsCompleted)
+        if (!spCurrentPlayer->getReadyStatus() && !spCurrentPlayer->getCardSentStatus())
         {
             //初始化发送卡牌 
-            if (sendCards(clientfd))
+            if (spCurrentPlayer->sendCards())
             {
-                initCardsCompleted = true;
                 std::cout << "initCards successfully, clientfd: " << clientfd << std::endl;
                 break;
             }
             else
             {
                 std::cout << "fail to initCards , clientfd: " << clientfd << std::endl;
-                ::close(clientfd);
-                return;
+                break;
             }
         }
-        else if (!alreadySentwaitMsg)
+
+        if (spCurrentPlayer->sendWaitMsg())
+            break;
+
+        if (!spCurrentPlayer->receiveMessage())
         {
-            sendWaitMsg(clientfd);
-            alreadySentwaitMsg = true;
+            std::cout << "recv failed, client[" << clientfd << "]" << std::endl;
+            break;
         }
+
+        while (true)
+        {
+            std::string aMsg;
+            spCurrentPlayer->handleClientMessage(aMsg);
+            if (aMsg.empty())
+                break;
+
+            std::cout << "client[" << clientfd << "] Says:" << aMsg << std::endl;
+            sendMsgToOtherClients(aMsg, clientfd);
+        }
+
     }
 
-
-    while (true) {
-        //接受到客户端消息 clientMsg
-        char clientMsg[32] = { 0 };
-        int clientMsgLength = ::recv(clientfd, clientMsg, sizeof(clientMsg) / sizeof(clientMsg[0]), 0);
-
-        if (clientMsgLength == 0) {
-            ::close(clientfd);
-            return;
-        }
-
-        if (clientMsgLength < 0)
-        {
-            if (errno != EWOULDBLOCK && errno != EAGAIN)
-            {
-                //链接真的出错了
-                ::close(clientfd);
-                return;
-            }
-            else
-            {
-                //sleep不合理，暂时这么用
-                sleep(1);
-                continue;
-            }
-        }
-
-        std::string& recvBuf = m_clientfdToRecvBuf[clientfd];
-        recvBuf.append(clientMsg, clientMsgLength);
-
-        handleClientMsg(clientfd);
-    }
+    return;
 }
 
 void TCPServer::newPlayerJoined(int clientfd)
 {
     auto spCurrentPlayer = std::make_shared<Player>(clientfd);
-    //m_clientfdToPlayer[clientfd] = std::move(spPlayer);
 
     std::shared_ptr<Desk> spCurrentFullDesk;
 
@@ -224,53 +193,35 @@ void TCPServer::newPlayerJoined(int clientfd)
             //注意不能 先做move操作
             m_deskInfo.push_back(std::move(spNewDesk));
         }
-
     }
-
 
     if (spCurrentFullDesk != nullptr)
     {
-        std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToDeskReady);
         initCards(spCurrentFullDesk);
         std::shared_ptr<Player> p1 = spCurrentFullDesk->spPlayer1.lock();
         std::shared_ptr<Player> p2 = spCurrentFullDesk->spPlayer2.lock();
         std::shared_ptr<Player> p3 = spCurrentFullDesk->spPlayer3.lock();
         if (p1 != nullptr && p2 != nullptr && p3 != nullptr)
         {
-            p1->serReady(true);
-            p2->serReady(true);
-            p3->serReady(true);
+            p1->setReadyStatus(true);
+            p2->setReadyStatus(true);
+            p3->setReadyStatus(true);
         }
-
     }
 
     //这里线程函数绑定参数的问题，
     //如果使用静态函数，则不应该传入this指针，而应该吧线程函数内调用的函数也变成静态函数
     //如果使用成员函数，这应该用 std::bind 或者 函数指针进行捕获 this指针。
-    auto spThread = std::make_shared<std::thread>(&TCPServer::clientThreadFunc, this, clientfd, spCurrentFullDesk);
-
+    auto spThread = std::make_shared<std::thread>(&TCPServer::clientThreadFunc, this, spCurrentPlayer, spCurrentFullDesk);
+    m_clientfdToPlayer[clientfd] = std::move(spCurrentPlayer);
     //m_clientfdToThread[clientfd] = spThread;  考虑这种方法 效率上不是最高的， 因为会生成一份thread 的拷贝
     m_clientfdToThread[clientfd] = std::move(spThread);
 
-
 }
 
-bool TCPServer::sendWelcomeMsg(int clientfd)
-{
-    int sendLength = ::send(clientfd, PLAYER_WELCOME_MSG, strlen(PLAYER_WELCOME_MSG), 0);
-    return sendLength == static_cast<int>(strlen(PLAYER_WELCOME_MSG));
-
-}
-
-bool TCPServer::sendWaitMsg(int clientfd)
+void TCPServer::initCards(const std::shared_ptr<Desk>& spDesk)
 {
 
-    int sendLength = ::send(clientfd, PLAYER_WAITING_MSG, strlen(PLAYER_WAITING_MSG), 0);
-    return sendLength == static_cast<int>(strlen(PLAYER_WAITING_MSG));
-}
-
-void TCPServer::initCards(std::shared_ptr<Desk> spDesk)
-{
     static constexpr char allCards[] = { 'A','2','3','4','5','6','7','8','9','X','J','Q','K','w','W' };
     static constexpr int allCardsCount = sizeof(allCards) / sizeof(allCards[0]);
 
@@ -290,52 +241,8 @@ void TCPServer::initCards(std::shared_ptr<Desk> spDesk)
 
 }
 
-bool TCPServer::sendCards(int clientfd)
-{
-    int sendLength = ::send(clientfd, m_toSendCards.c_str(), m_toSendCards.length(), 0);
-    return sendLength == static_cast<int>(m_toSendCards.length());
-}
 // 012 3 456 7  89 	
 // ABC\n EDF\n  GH
-void TCPServer::handleClientMsg(int clientfd)
-{
-    std::string currentMsg;
-    int index = 0;
-    int currentMsgPos = 0;
-    std::string& recvBuf = m_clientfdToRecvBuf[clientfd];
-    int endOfMsg = recvBuf.length() - 1;
-
-    while (true)
-    {
-        //如果是整包,且还有数据
-        if (recvBuf[index] == '\n')
-        {
-            currentMsg = recvBuf.substr(currentMsgPos, index - currentMsgPos);
-
-            std::cout << "Client[" << clientfd << "] Says :" << currentMsg << std::endl;
-            currentMsg += "\n";
-            //转发当前玩家消息 给其他玩家;
-            sendMsgToOtherClients(currentMsg, clientfd);
-
-            currentMsgPos = index + 1;
-        }
-
-        if (index == endOfMsg)
-        {
-            if (currentMsgPos <= index)
-                recvBuf = recvBuf.substr(currentMsgPos, index - currentMsgPos + 1);
-            else
-                recvBuf.clear();
-
-            break;
-        }
-
-        index++;
-    }
-
-    return;
-}
-
 void TCPServer::sendMsgToOtherClients(const std::string& msg, int selfishfd)
 {
     //线程安全问题？ 
@@ -343,31 +250,16 @@ void TCPServer::sendMsgToOtherClients(const std::string& msg, int selfishfd)
     //2、m_clientfdToThread 可能因为客户端丢失连接或者新客户端连接，导致被改写
     int otherClientfd;
 
-    std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToThread);
-    for (const auto& client : m_clientfdToThread)
+    std::lock_guard<std::mutex> scopedLock(m_mutexForClientfdToPlayer);
+    for (auto& client : m_clientfdToPlayer)
     {
-        otherClientfd = client.first;
-        if (otherClientfd == selfishfd)
-            continue;
 
         std::ostringstream oss;
         oss << "Client[" << selfishfd << "] Says :" << msg;
 
         std::string msgWithOnerInfo = oss.str();
 
-        if (!sendMsgToClient(otherClientfd, msgWithOnerInfo))
-            std::cout << "failed to sendMsgToOtherClients, clientfd:" << client.first << "\n";
+        client.second->sendMsgToClient(msgWithOnerInfo);
     }
 }
 
-bool TCPServer::sendMsgToClient(int otherClientfd, const std::string& msg)
-{
-    std::lock_guard<std::mutex> scopedLock(*m_clientfdToMutex[otherClientfd]);
-
-    //TODO: 假设消息太长,一次性发不出去, 需要处理 
-    int sendLength = ::send(otherClientfd, msg.c_str(), msg.length(), 0);
-    if (sendLength != static_cast<int>(msg.length()))
-        return false;
-
-    return true;
-}
