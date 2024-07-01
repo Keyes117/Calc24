@@ -31,8 +31,6 @@ void Player::setDesk(const std::shared_ptr<Desk>& desk)
     m_spDesk = desk;
 }
 
-
-
 bool Player::getCardSentStatus() const
 {
     return m_cardSentStatus;
@@ -77,8 +75,10 @@ bool Player::getWaitSentStatus()
 
 bool Player::sendWaitMsg()
 {
+    int sendLength;
+    if (!m_waitSentStatus)
+        sendLength = ::send(m_clientfd, PLAYER_WAITING_MSG, strlen(PLAYER_WAITING_MSG), 0);
 
-    int sendLength = ::send(m_clientfd, PLAYER_WAITING_MSG, strlen(PLAYER_WAITING_MSG), 0);
     if (sendLength == static_cast<int>(strlen(PLAYER_WAITING_MSG)))
     {
         m_waitSentStatus = true;
@@ -140,6 +140,9 @@ bool Player::receiveMessage()
 
 void Player::handleClientMessage(std::string& aMsg)
 {
+    if (m_recvBuffer.empty())
+        return;
+
     std::string currentMsg;
     int index = 0;
     int currentMsgPos = 0;
@@ -157,6 +160,7 @@ void Player::handleClientMessage(std::string& aMsg)
             aMsg = currentMsg;
             //拿到完整的包就退出
             currentMsgPos = index + 1;
+            m_recvBuffer = m_recvBuffer.substr(currentMsgPos);
             break;
             //转发当前玩家消息 给其他玩家;
             //sendMsgToOtherClients(currentMsg, m_clientfd);         

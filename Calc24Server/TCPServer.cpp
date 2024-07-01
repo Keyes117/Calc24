@@ -16,12 +16,8 @@
 //其他库文件
 #include "Player.h"         //本项目中其他头文件
 
-
-
-
 bool TCPServer::init(const std::string& ip, uint16_t port)
 {
-
     srand(time(nullptr));
 
     //1.创建一个侦听socket
@@ -78,77 +74,13 @@ void TCPServer::start()
 
     }
 }
-
-//客户端连上时的线程函数
-void TCPServer::clientThreadFunc(std::shared_ptr<Player> spCurrentPlayer, std::shared_ptr<Desk> spCurrentDesk)
-{
-    int clientfd = spCurrentPlayer->getClientfd();
-
-    std::cout << "new client connected: " << std::endl;
-    //初始化clientfd对应的 mutex;
-    //m_clientfdToMutex[clientfd] = std::mutex();  mutex不支持拷贝构造
-    //m_clientfdToMutex.emplace(clientfd, std::mutex()); //原位构造
-    // 改成指针后
-    //m_clientfdToMutex[clientfd] = std::move(std::make_shared<std::mutex>()); //C++11 的STL容器或自动move指针,可以不显示的move
-    //这里线程可能后运行到这里 导致客户线程 无法发牌
-    //m_clientfdToDeskReady[clientfd] = false;
-
-    //发送欢迎消息
-    if (!spCurrentPlayer->sendWelcomeMsg())
-    {
-        return;
-    }
-
-    //等待满n个人就发牌
-    while (true)
-    {
-        if (!spCurrentPlayer->getReadyStatus() && !spCurrentPlayer->getCardSentStatus())
-        {
-            //初始化发送卡牌 
-            if (spCurrentPlayer->sendCards())
-            {
-                std::cout << "initCards successfully, clientfd: " << clientfd << std::endl;
-                break;
-            }
-            else
-            {
-                std::cout << "fail to initCards , clientfd: " << clientfd << std::endl;
-                break;
-            }
-        }
-
-        if (spCurrentPlayer->sendWaitMsg())
-            break;
-
-        if (!spCurrentPlayer->receiveMessage())
-        {
-            std::cout << "recv failed, client[" << clientfd << "]" << std::endl;
-            break;
-        }
-
-        while (true)
-        {
-            std::string aMsg;
-            spCurrentPlayer->handleClientMessage(aMsg);
-            if (aMsg.empty())
-                break;
-
-            std::cout << "client[" << clientfd << "] Says:" << aMsg << std::endl;
-            sendMsgToOtherClients(aMsg, clientfd);
-        }
-
-    }
-
-    return;
-}
-
 void TCPServer::newPlayerJoined(int clientfd)
 {
     auto spCurrentPlayer = std::make_shared<Player>(clientfd);
 
     std::shared_ptr<Desk> spCurrentFullDesk;
 
-    //如果是第一个桌子
+    //如果还没有桌子
     auto iter = m_deskInfo.rbegin();
     if (iter == m_deskInfo.rend())
     {
@@ -163,9 +95,10 @@ void TCPServer::newPlayerJoined(int clientfd)
         //注意不能 先做move操作
         m_deskInfo.push_back(std::move(spNewDesk));
     }
-    //如果是第一个桌子
+    //如果已经有桌子  
     else
     {
+        spCurrentPlayer->setDesk((*iter));
         //非第一个玩家加入
         if ((*iter)->spPlayer1.expired())  //weak_ptr 管理的对象 已经没有了 通过expired;
         {
@@ -178,7 +111,6 @@ void TCPServer::newPlayerJoined(int clientfd)
         else if ((*iter)->spPlayer3.expired())
         {
             (*iter)->spPlayer3 = spCurrentPlayer;
-
             //当前来了新玩家， 桌子坐满了
             spCurrentFullDesk = *iter;
         }
@@ -219,6 +151,70 @@ void TCPServer::newPlayerJoined(int clientfd)
 
 }
 
+//客户端连上时的线程函数
+void TCPServer::clientThreadFunc(std::shared_ptr<Player> spCurrentPlayer, std::shared_ptr<Desk> spCurrentDesk)
+{
+    int clientfd = spCurrentPlayer->getClientfd();
+
+    std::cout << "new client connected: " << std::endl;
+    //初始化clientfd对应的 mutex;
+    //m_clientfdToMutex[clientfd] = std::mutex();  mutex不支持拷贝构造
+    //m_clientfdToMutex.emplace(clientfd, std::mutex()); //原位构造
+    // 改成指针后
+    //m_clientfdToMutex[clientfd] = std::move(std::make_shared<std::mutex>()); //C++11 的STL容器或自动move指针,可以不显示的move
+    //这里线程可能后运行到这里 导致客户线程 无法发牌
+    //m_clientfdToDeskReady[clientfd] = false;
+
+    //发送欢迎消息
+    if (!spCurrentPlayer->sendWelcomeMsg())
+        return;
+
+    //发送等待消息
+    if (!spCurrentPlayer->sendWaitMsg())
+        return;
+
+    //等待满n个人就发牌
+    while (true)
+    {
+        if (spCurrentPlayer->getReadyStatus() && !spCurrentPlayer->getCardSentStatus())
+        {
+            //初始化发送卡牌 
+            if (spCurrentPlayer->sendCards())
+            {
+                std::cout << "sendCards successfully, clientfd: " << clientfd << std::endl;
+            }
+            else
+            {
+                std::cout << "fail to sendCards , clientfd: " << clientfd << std::endl;
+                break;
+            }
+        }
+
+
+        if (!spCurrentPlayer->receiveMessage())
+        {
+            std::cout << "recv failed, client[" << clientfd << "]" << std::endl;
+            break;
+        }
+
+        while (true)
+        {
+            std::string aMsg;
+            spCurrentPlayer->handleClientMessage(aMsg);
+            if (aMsg.empty())
+                break;
+
+            std::cout << "client[" << clientfd << "] Says:" << aMsg << std::endl;
+            sendMsgToOtherClients(aMsg, clientfd);
+        }
+
+    }
+
+    return;
+}
+
+
+
 void TCPServer::initCards(const std::shared_ptr<Desk>& spDesk)
 {
 
@@ -246,7 +242,7 @@ void TCPServer::initCards(const std::shared_ptr<Desk>& spDesk)
 void TCPServer::sendMsgToOtherClients(const std::string& msg, int selfishfd)
 {
     //线程安全问题？ 
-    //1、多个用户传递消息，可能某个clientfd被多个线程同时调用
+    //1、多个用户传递消息，可能某个clientfd被多个线程同时调用（下沉至Player后解决）
     //2、m_clientfdToThread 可能因为客户端丢失连接或者新客户端连接，导致被改写
     int otherClientfd;
 
